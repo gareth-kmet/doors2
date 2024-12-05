@@ -44,70 +44,82 @@
 
     FLOOR_THEME_SIZE = (4,2)
 
+    """
+    012
+    345
+    """
     class FloorTiles(RoomTile):
         VOID = ' ', (-1,-1)
-        TOP_LEFT = '1', (0,0)
-        TOP = '2', (1,0)
-        TOP_RIGHT = '3', (2,0)
-        LEFT = '4', (0,1)
-        MID = '5', (1,1)
-        DARK = '6', (2,1)
+        TOP_LEFT = '0', (0,0)
+        TOP = '1', (1,0)
+        TOP_RIGHT = '2', (2,0)
+        LEFT = '3', (0,1)
+        MID = '4', (1,1)
+        DARK = '5', (2,1)
 
     class FloorThemes(RoomTile):
         WOOD = 'wood', (0,5)
 
     WALL_THEME_SIZE = (8,7)
 
+    """
+    adjpPJDV
+    bekqQKEW
+    cflrRLFX
+    AgmsSMGv
+    BhntTNHw
+    CiouUOIx
+    """
     class WallTiles(RoomTile):
-        VOID = ' ', (-1,-1)
-        TOP_END_LEFT = 't', (0,0)
-        BOT_END_LEFT = 'b', (0,1)
-        MID_END_LEFT = 'm', (0,2)
-        TOP_END_RIGHT = 'T', (0,3)
-        BOT_END_RIGHT = 'B', (0,4)
-        MID_END_RIGHT = 'M', (0,5)
-        TOP_LEFT_CORNER_OVERLAP_SHALLOW = 'Q', (1,0)
-        TOP_LEFT_CORNER_SHALLOW = 'q', (1,1)
-        MID_LEFT_CORNER_SHALLOW = 'w', (1,2)
-        BOT_LEFT_CORNER_SHALLOW = 'e', (1,3)
-        TOP_LEFT_EXTRUDE = 'k', (1,4)
-        BOT_LEFT_EXTRUDE = 'K', (1,5)
-        TOP_LEFT_CORNER = 'y', (2,0)
-        BOT_LEFT_CORNER = 'Y', (2,1)
-        LEFT = 'l', (2,2)
-        TOP_LEFT_ISLAND = 'i', (2,3)
-        BOT_LEFT_ISLAND = 'I', (2,4)
-        LEFT_BOT_CORNER = 'p', (2,5)
-        TOP_LEFT_CORNER_OVERLAP = 'a', (3,0)
-        LEFT_BOT_CORNER_OVERLAP = 'A', (3,1)
-        TOP = 's', (3,2)
-        BOT = 'S', (3,3)
-        MID_END = 'd', (3,4)
-        BOT_B = 'f', (3,5)
-        TOP_RIGHT_CORNER_OVERLAP = 'g', (4,0)
-        BOT_RIGHT_CORNER_OVERLAP = 'G', (4,1)
-        TOP_1 = 'H', (4,2)
-        BOT_1 = 'h', (4,3)
-        MID = 'D', (4,4)
-        BOT_B_1 = 'F', (4,5)
-        TOP_RIGHT_CORNER = 'u', (5,0)
-        BOT_RIGHT_CORNER = 'U', (5,1)
-        RIGHT = 'r', (5,2)
-        TOP_RIGHT_ISLAND = 'l', (5,3)
-        BOT_RIGHT_ISLAND = 'L', (5,4)
-        RIGHT_BOT_CORNER = 'P', (5,5)
-        TOP_RIGHT_CORNER_OVERLAP_SHALLOW = 'o', (6,0)
-        TOP_RIGHT_CORNER_SHALLOW = 'n', (6,1)
-        MID_RIGHT_CORNER_SHALLOW = 'N', (6,2)
-        BOT_RIGHT_CORNER_SHALLOW = 'x', (6,3)
-        TOP_RIGHT_EXTRUDE = 'z', (6,4)
-        BOT_RIGHT_EXTRUDE = 'Z', (6,5)
-        TOP_RIGHT_ISLAND_SHALLOW = 'v', (7,0)
-        MID_RIGHT_ISLAND_SHALLOW = 'V', (7,1) 
-        BOT_RIGHT_ISLAND_SHALLOW = '1', (7,2)
-        TOP_LEFT_ISLAND_SHALLOW = '2', (7,3)
-        MID_LEFT_ISLAND_SHALLOW = '3', (7,4) 
-        BOT_LEFT_ISLAND_SHALLOW = '4', (7,5)
+        VOID                            = ' ', (-1,-1)
+        TOP_END_LEFT                    = 'a', (0,0)
+        BOT_END_LEFT                    = 'b', (0,1)
+        MID_END_LEFT                    = 'c', (0,2)
+        TOP_END_RIGHT                   = 'A', (0,3)
+        BOT_END_RIGHT                   = 'B', (0,4)
+        MID_END_RIGHT                   = 'C', (0,5)
+        TOP_LEFT_CORNER_OVERLAP_SHALLOW = 'd', (1,0)
+        TOP_LEFT_CORNER_SHALLOW         = 'e', (1,1)
+        MID_LEFT_CORNER_SHALLOW         = 'f', (1,2)
+        BOT_LEFT_CORNER_SHALLOW         = 'g', (1,3)
+        TOP_LEFT_EXTRUDE                = 'h', (1,4)
+        BOT_LEFT_EXTRUDE                = 'i', (1,5)
+        TOP_LEFT_CORNER                 = 'j', (2,0)
+        BOT_LEFT_CORNER                 = 'k', (2,1)
+        LEFT                            = 'l', (2,2)
+        TOP_LEFT_ISLAND                 = 'm', (2,3)
+        BOT_LEFT_ISLAND                 = 'n', (2,4)
+        LEFT_BOT_CORNER                 = 'o', (2,5)
+        TOP_LEFT_CORNER_OVERLAP         = 'p', (3,0)
+        LEFT_BOT_CORNER_OVERLAP         = 'q', (3,1)
+        TOP                             = 'r', (3,2)
+        BOT                             = 's', (3,3)
+        MID_END                         = 't', (3,4)
+        BOT_B                           = 'u', (3,5)
+        TOP_RIGHT_CORNER_OVERLAP        = 'P', (4,0)
+        BOT_RIGHT_CORNER_OVERLAP        = 'Q', (4,1)
+        TOP_1                           = 'R', (4,2)
+        BOT_1                           = 'S', (4,3)
+        MID                             = 'T', (4,4)
+        BOT_B_1                         = 'U', (4,5)
+        TOP_RIGHT_CORNER                = 'J', (5,0)
+        BOT_RIGHT_CORNER                = 'K', (5,1)
+        RIGHT                           = 'L', (5,2)
+        TOP_RIGHT_ISLAND                = 'M', (5,3)
+        BOT_RIGHT_ISLAND                = 'N', (5,4)
+        RIGHT_BOT_CORNER                = 'O', (5,5)
+        TOP_RIGHT_CORNER_OVERLAP_SHALLOW= 'D', (6,0)
+        TOP_RIGHT_CORNER_SHALLOW        = 'E', (6,1)
+        MID_RIGHT_CORNER_SHALLOW        = 'F', (6,2)
+        BOT_RIGHT_CORNER_SHALLOW        = 'G', (6,3)
+        TOP_RIGHT_EXTRUDE               = 'H', (6,4)
+        BOT_RIGHT_EXTRUDE               = 'I', (6,5)
+        TOP_RIGHT_ISLAND_SHALLOW        = 'V', (7,0)
+        MID_RIGHT_ISLAND_SHALLOW        = 'W', (7,1) 
+        BOT_RIGHT_ISLAND_SHALLOW        = 'X', (7,2)
+        TOP_LEFT_ISLAND_SHALLOW         = 'v', (7,3)
+        MID_LEFT_ISLAND_SHALLOW         = 'w', (7,4) 
+        BOT_LEFT_ISLAND_SHALLOW         = 'x', (7,5)
 
     class WallThemes(RoomTile):
         BROWN = 'brown', (0,0)
@@ -572,21 +584,21 @@
 
     playerAnim = AnimationDirectorFactory().setSourceFiles(CharacterSourceFiles.CHARACTER_PREMADE_17).setImageAnimations(CharacterAnimations.WALK).build()
     playerAnim.setDirection(Direction.RIGHT).setAnimation(CharacterAnimations.WALK).setSource(CharacterSourceFiles.CHARACTER_PREMADE_17)
-    playerMove = MovementDirector()
-    playerChar = CharacterDirector(playerMove, playerAnim)
     thisMap = MapFactory(5,5).setWall(
-        "ysssu",
-        "YSSSU",
-        "l   r",
-        "l   r",
-        "pfffP"
+        "jrrRJ",
+        "kssSK",
+        "l   L",
+        "l   L",
+        "ouuuO"
     ).setFloor(
         "     ",
         "     ",
-        " 122 ",
-        " 455 ",
+        " 011 ",
+        " 344 ",
         "     "
     ).build(WallThemes.BROWN, FloorThemes.WOOD)
+    playerMove = MovementDirector(thisMap)
+    playerChar = CharacterDirector(playerMove, playerAnim)
 
 define door.current = Door(DoorSide.CURRENT, Params.DEFAULT)
 define door.left = door.current.left()
