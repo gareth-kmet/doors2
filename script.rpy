@@ -37,6 +37,24 @@
             self.c = char
             self.x = loc[0]
             self.y = loc[1]
+        
+        @classmethod
+        def getTile(cls, char):
+            return [c for c in list(cls) if c.c == char][0]
+
+    FLOOR_THEME_SIZE = (4,2)
+
+    class FloorTiles(RoomTile):
+        VOID = ' ', (-1,-1)
+        TOP_LEFT = '1', (0,0)
+        TOP = '2', (1,0)
+        TOP_RIGHT = '3', (2,0)
+        LEFT = '4', (0,1)
+        MID = '5', (1,1)
+        DARK = '6', (2,1)
+
+    class FloorThemes(RoomTile):
+        WOOD = 'wood', (0,5)
 
     WALL_THEME_SIZE = (8,7)
 
@@ -90,10 +108,6 @@
         TOP_LEFT_ISLAND_SHALLOW = '2', (7,3)
         MID_LEFT_ISLAND_SHALLOW = '3', (7,4) 
         BOT_LEFT_ISLAND_SHALLOW = '4', (7,5)
-
-        @classmethod
-        def getTile(cls, char):
-            return [c for c in list(WallTiles) if c.c == char][0]
 
     class WallThemes(RoomTile):
         BROWN = 'brown', (0,0)
@@ -339,6 +353,32 @@
                 displayables[anim] = anim.buildDynamic(dynamicSourceFile)
             director.__setDisplayables(self.imageAnimations, self.sourceFiles, displayables)
             return director
+
+    class Collision:
+        def __init__(self, x, y, w, h):
+            self.collisions = []
+            self.canMove = True
+            self.tx = x
+            self.bx = x + w
+            self.ty = y
+            self.by = y + h
+        
+        def collide(self, x, y, walkable):
+            self.canMove = self.canMove and walkable
+            self.collisions.append((x,y))
+        
+        def check(self, x, y, walkable):
+            tx = x
+            bx = x + IMAGE_SIZE
+            ty = y
+            by = y + IMAGE_SIZE
+
+            cx = tx <= self.bx and bx >= self.tx
+            cy = ty <= self.by and by >= self.ty
+
+            if cx and cy:
+                self.collide(x,y,walkable)
+
     
     class Map:
         def __init__(self, rows, columns, walkable):
@@ -346,6 +386,7 @@
             self.columns = columns,
             self.walkable = walkable
             self.walls = None
+            self.floors = None
         
         def setWalls(self, walls):
             self.walls = walls
@@ -353,11 +394,24 @@
         def getWalls(self):
             return self.walls
 
+        def setFloors(self, floors):
+            self.floors = floors
+
+        def getFloors(self):
+            return self.floors
+
+        def testCollision(self, x, y, width, height):
+            c = Collision(x,y,width,height)
+            for i in range(rows):
+                for j in range(columns):
+                    c.check(j,i,self.walkable[i][j])
+            return c
+
     class MapFactory:
         def __init__(self, rows, columns):
             self.rows = rows
             self.columns = columns
-            self.floor = [[WallTiles.VOID for _ in range(columns)] for _ in range(rows)]
+            self.floor = [[FloorTiles.VOID for _ in range(columns)] for _ in range(rows)]
             self.wall = [[WallTiles.VOID for _ in range(columns)] for _ in range(rows)]
             self.roof = [[WallTiles.VOID for _ in range(columns)] for _ in range(rows)]
             self.walkable = [[False for _ in range(columns)] for _ in range(rows)]
@@ -372,35 +426,59 @@
         def setRoof(self, *values):
             for i in range(rows):
                 for j in range(columns):
-                    self.roof[i][j] = WallTiles(values[i][j])
+                    self.roof[i][j] = WallTiles.getTile(values[i][j])
                     self.walkable[i][j] = self.roof[i][j] == WallTiles.VOID
             return self
 
-        def build(self, theme):
-            m = Map(self.rows, self.columns, self.walkable)
-            compose = []
+        def setFloor(self, *values):
             for i in range(self.rows):
                 for j in range(self.columns):
-                    x = theme.x * WALL_THEME_SIZE[0] + self.wall[i][j].x * IMAGE_SIZE
-                    y = theme.y * WALL_THEME_SIZE[1] + self.wall[i][j].y * IMAGE_SIZE
+                    self.floor[i][j] = FloorTiles.getTile(values[i][j])
+            return self
+
+        def build(self, wtheme, ftheme):
+            m = Map(self.rows, self.columns, self.walkable)
+            wcompose = []
+            for i in range(self.rows):
+                for j in range(self.columns):
+                    if self.wall[i][j] == WallTiles.VOID: continue
+                    x = wtheme.x * WALL_THEME_SIZE[0] * IMAGE_SIZE + self.wall[i][j].x * IMAGE_SIZE
+                    y = wtheme.y * WALL_THEME_SIZE[1] * IMAGE_SIZE + self.wall[i][j].y * IMAGE_SIZE
 
                     img = Crop((x, y, IMAGE_SIZE, IMAGE_SIZE), RoomSourceFiles.WALLS.file)
                     offset = (j * IMAGE_SIZE, i * IMAGE_SIZE)
-                    compose += [offset, img]
-            walls = Composite((self.columns * IMAGE_SIZE, self.rows * IMAGE_SIZE), *compose)
+                    wcompose += [offset, img]
+            walls = Composite((self.columns * IMAGE_SIZE, self.rows * IMAGE_SIZE), *wcompose)
             m.setWalls(walls)
+            fcompose = []
+            for i in range(self.rows):
+                for j in range(self.columns):
+                    if self.floor[i][j] == FloorTiles.VOID: continue
+                    x = ftheme.x * FLOOR_THEME_SIZE[0] * IMAGE_SIZE + self.floor[i][j].x * IMAGE_SIZE
+                    y = ftheme.y * FLOOR_THEME_SIZE[1] * IMAGE_SIZE + self.floor[i][j].y * IMAGE_SIZE
+
+                    img = Crop((x, y, IMAGE_SIZE, IMAGE_SIZE), RoomSourceFiles.FLOORS.file)
+                    offset = (j * IMAGE_SIZE, i * IMAGE_SIZE)
+                    fcompose += [offset, img]
+            floors = Composite((self.columns * IMAGE_SIZE, self.rows * IMAGE_SIZE), *fcompose)
+            m.setFloors(floors)
             return m
 
 
 
     class MovementDirector(Director):
-        def __init__(self):
+        def __init__(self, m):
             super().__init__(0.03)
             self.x = 0
             self.y = 0
             self.speed = 0
             self.dir = Direction.DOWN
             self.sdir = Direction.DOWN
+            self.map = m
+            self.cxoffset = 0
+            self.cyoffset = 0
+            self.cwidth = IMAGE_SIZE
+            self.cheight = IMAGE_SIZE
 
         def setDirection(self, dir, sdir=None):
             self.dir = dir
@@ -408,6 +486,12 @@
         
         def setSpeed(self, pixelsPerSecond=0):
             self.speed = pixelsPerSecond
+        
+        def setCollisionBox(xoffset = 0, yoffset = 0, width = IMAGE_SIZE, height = IMAGE_SIZE):
+            self.cxoffset = xoffset
+            self.cyoffset = yoffset
+            self.cwidht = width
+            self.cheight = height
 
         def move(self):
             sx = sy = self.speed * self.dt
@@ -425,25 +509,25 @@
                     sx *= 0.7
                     sy *= 0.7
             
-            ...
+            newx = self.x + sx
+            newy = self.y + sy
             
-            
+            c = self.map.testCollision(newx + self.cxoffset, newy + self.cyoffset, self.cwidth, self.cheight)
+
+            if c.canMove:
+                self.x = newx
+                self.y = newy            
 
         def onLoop(self, trans, st, at):
             super().onLoop(trans, st, at)
             return None
-    
+
     class CharacterDirector(Director):
         def __init__(self, movementDirector, animationDirector):
             super().__init__(0.03)
             self.move = movementDirector
             self.anim = animationDirector
             self.dir = Direction.DOWN
-
-        def setDirection(self, dir):
-            self.dir = Direction.DOWN
-            self.anim.setDirection(dir)
-            self.move.setDirection(dir)
 
         def onLoop(self, trans, st, at):
             super().onLoop(trans, st, at)
@@ -496,7 +580,13 @@
         "l   r",
         "l   r",
         "pfffP"
-    ).build(WallThemes.BROWN)
+    ).setFloor(
+        "     ",
+        "     ",
+        " 122 ",
+        " 455 ",
+        "     "
+    ).build(WallThemes.BROWN, FloorThemes.WOOD)
 
 define door.current = Door(DoorSide.CURRENT, Params.DEFAULT)
 define door.left = door.current.left()
@@ -514,8 +604,10 @@ transform characterLoop(cd):
 
 image img = playerAnim.getDisplayable()
 image wall = thisMap.getWalls()
+image floors = thisMap.getFloors()
 
 label start:
+    show floors at truecenter
     show wall at truecenter
     show img at truecenter, loop(playerAnim)
     "right"
