@@ -48,6 +48,14 @@
         FLOORS = "floors", "room/Room_Builder_Floors.png"
         BORDERS = "borders", "room/Room_Builder_borders.png"
         INTERIOR = "interior", "room/Condominium_Black_Shadow.png"
+    
+    class ObjectSourceFiles(SourceFile):
+        FIREPLACE = "fireplace", "room/objects/fireplace.png"
+        CAT = "cat", "room/objects/cat.png"
+
+    class DoorSourceFiles(SourceFile):
+        GLASS_LEFT = "glass left", "room/doors/glass_left.png"
+        GLASS_RIGHT = "glass right", "room/doors/glass_right.png"
 
     class SpriteTheme(Enum):
         def __new__(cls, tag, kwargs):
@@ -60,40 +68,19 @@
             self.tag = tag
             self.__setup(**kwargs)
 
-        def __setup(self, x = None, y = None, r = None, c = None, w = IMAGE_SIZE, h = IMAGE_SIZE, xoffset=0, yoffset=0, src = None, refreshRate = 1):
-            self.x = 0
-            self.y = 0
-
-            if x is not None:
-                self.x = x
-            elif c is not None:
-                self.x = c * w + xoffset
-            
-            if y is not None:
-                self.y = y
-            elif r is not None:
-                self.y = r * h + yoffset
-            
+        def __setup(self, x = 0, y = 0, r = 0, c = 0, src = None):
+            self.x = x + c * IMAGE_SIZE
+            self.y = y + r * IMAGE_SIZE
             self.source = src
-            self.refreshRate = refreshRate
 
-    class NoTheme(SpriteTheme):
-        NONE = 'default', dict(x=0,y=0)
+    class VoidTheme(SpriteTheme):
+        VOID = '', dict() # This one will cause image to not be drawn
 
-    class SpriteDynamicDisplayableBuilder:
-        def __init__(self, layer, getTheme, getFrame=None, getDirection=None):
-            self.getTheme = getTheme
-            self.getFrame = getFrame
-            self.getDirection = getDirection
-            self.layer = layer
-        
-        def __call__(self, st, at, sprite):
-            theme = self.getTheme(st, at, sprite)
-            frame = (self.getFrame(st, at, sprite, theme) if self.getFrame else 0) % sprite.frames
-            direction = self.getDirection(st, at, sprite, theme) if self.getDirection else Direction.NONE
-            return sprite.buildStatic(self.layer, theme, frame=frame, direction=direction, nullable=False), theme.refreshRate
+    class StaticSpriteThemes(SpriteTheme):
+        NONE = "none", dict() # This one will cause image to use source
 
     class Sprite(Enum):
+        
         def __new__(cls, char, kwargs):
             obj = builtins.object.__new__(cls)
             obj._value_ = char
@@ -104,29 +91,21 @@
             self.__setup(**kwargs)
         
         def __setup(self, 
-                x=None, y=None, r=None, c=None, width = IMAGE_SIZE, height = IMAGE_SIZE, 
-                f = 1, df = (1,0), themes = NoTheme, src = None,
+                x=0, y=0, r=0, c=0, w=IMAGE_SIZE, h=IMAGE_SIZE, anchorx=0, anchory=0,
+                f = 1, df = (1,0), themes = StaticSpriteThemes, src = None, isVoid = False,
                 up=0, down=0, left=0, right=0, none=0,
                 upy=0, downy=0, lefty=0, righty=0, noney=0,
                 upx=0, downx=0, leftx=0, rightx=0, nonex=0
             ):
-            self.x = 0
-            self.y = 0
+            self.x = x + c * IMAGE_SIZE
+            self.y = y + r * IMAGE_SIZE
+            self.isVoid = isVoid
             self.src_override = src
-            if x is not None:
-                self.x = x
-            elif c is not None:
-                self.x = c*width
-            
-            if y is not None:
-                self.y = y
-            elif r is not None:
-                self.y = r*height
 
-            self.width = width
-            self.height = height
-            self.themes = themes
-            self.frames = f
+            self.width = w if not isVoid else 0
+            self.height = h if not isVoid else 0
+            self.themes = themes if not isVoid else VoidTheme
+            self.frames = f if not isVoid else 1
             self.dframe = df
             self.directional_offsets = {
                 Direction.NONE: (nonex + df[0] * none * f, noney + df[1] * none * f),
@@ -135,19 +114,20 @@
                 Direction.LEFT: (leftx + df[0] * left * f, lefty + df[1] * left * f),
                 Direction.RIGHT:(rightx + df[0] * right * f, righty + df[1] * right * f)
             }
-            
-        def buildDynamic(self, layer, getTheme, getFrame=None, getDirection=None, nullable=True):
-            if self.themes == NoTheme or self.themes == None:
-                if nullable:
-                    return None
-                else:
-                    return Null(self.width, self.height)
+            self.anchorx=anchorx
+            self.anchory=anchory
 
-            func = SpriteDynamicDisplayableBuilder(layer, getTheme, getFrame, getDirection)
-            return DynamicDisplayable(func, self)
+        def position(self, fromPos=(0,0)):
+            return fromPos[0]-self.anchorx, fromPos[1]-self.anchory
 
-        def buildStatic(self, layer, theme, frame = 0, direction=Direction.NONE, nullable=True):
-            if theme == NoTheme.NONE or theme is None:
+        def buildNull(self, *args, **kwargs):
+            return Null(self.width, self.height)
+
+        def buildStaticHandler(self):
+            return StaticSpriteRenderHandler(self)
+
+        def buildStatic(self, theme, frame = 0, direction=Direction.NONE, nullable=True):
+            if self.isVoid or self.themes == VoidTheme or theme == VoidTheme.VOID or theme is None:
                 if nullable:
                     return None
                 else:
@@ -158,13 +138,15 @@
             source = self.src_override.file if self.src_override is not None else theme.source.file
             img = Crop((x,y, self.width, self.height), source)
             return img
-    
-    
-    class StaticSpriteThemes(SpriteTheme):
-        NONE    = "none", dict(src=None)
+            
+        @classmethod
+        def _missing_(cls, value):
+            return None
 
     class StaticSpriteTiles(Sprite):
-        VOID = '', dict()
+        VOID = ' ', dict(isVoid=True)
+        FIREPLACE = 'f', dict(h=IMAGE_SIZE*3,w=IMAGE_SIZE*2,anchory=IMAGE_SIZE*2,f=4,themes=StaticSpriteThemes,src=ObjectSourceFiles.FIREPLACE)
+        CAT = 'c', dict(w=IMAGE_SIZE*3,f=12,themes=StaticSpriteThemes,src=ObjectSourceFiles.CAT)
 
     class StairTopThemes(SpriteTheme):
         GREY    = "grey",   dict(r=0,c=0)
@@ -177,12 +159,12 @@
     
     class StairBotThemes(SpriteTheme):
         GREY    = "grey",   dict(c=0)
-        SILVER  = "silver", dict(c=2)
-        BEIGE   = "beige",  dict(c=1)
-        BROWN   = "brown",  dict(c=3)
+        SILVER  = "silver", dict(c=6)
+        BEIGE   = "beige",  dict(c=3)
+        BROWN   = "brown",  dict(c=9)
 
         def __init__(self, tag, kwargs):
-            super().__init__(tag, setDefault(kwargs, r=4, w=3 * IMAGE_SIZE, src = RoomSourceFiles.INTERIOR)) 
+            super().__init__(tag, setDefault(kwargs, r=4, src = RoomSourceFiles.INTERIOR)) 
     
     class StairCarpetThemes(SpriteTheme):
         RED = "red", dict(c=12)
@@ -197,71 +179,37 @@
             super().__init__(tag, setDefault(kwargs, src = RoomSourceFiles.INTERIOR)) 
 
     class CondoInteriorTiles(Sprite):
-        VOID                    = ' ', dict(c=-1,r=-1,themes=NoTheme)
+        VOID = ' ', dict(isVoid=True)
+        STAIR_U4_LEFT   = 'r', dict(r=0,c=1,h=IMAGE_SIZE*4,themes=StairTopThemes)
+        STAIR_U4_MID    = 'f', dict(r=0,c=0,h=IMAGE_SIZE*4,themes=StairTopThemes)
+        STAIR_U4_RIGHT  = 'v', dict(r=0,c=2,h=IMAGE_SIZE*4,themes=StairTopThemes)
+        STAIR_U3_LEFT   = 'e', dict(r=1,c=4,h=IMAGE_SIZE*3,themes=StairTopThemes)
+        STAIR_U3_MID    = 'd', dict(r=1,c=3,h=IMAGE_SIZE*3,themes=StairTopThemes)
+        STAIR_U3_RIGHT  = 'c', dict(r=1,c=5,h=IMAGE_SIZE*3,themes=StairTopThemes)
+        STAIR_D2_LEFT   = 'w', dict(r=0,c=1,h=IMAGE_SIZE*2,themes=StairBotThemes)
+        STAIR_D2_MID    = 's', dict(r=0,c=0,h=IMAGE_SIZE*2,themes=StairBotThemes)
+        STAIR_D2_RIGHT  = 'x', dict(r=0,c=2,h=IMAGE_SIZE*2,themes=StairBotThemes)
 
-        STAIR_U4_M0 = 'a', dict(r=0,c=0,themes=StairTopThemes)
-        STAIR_U4_L0 = 'b', dict(r=0,c=1,themes=StairTopThemes)
-        STAIR_U4_R0 = 'c', dict(r=0,c=2,themes=StairTopThemes)
-        STAIR_U4_M1 = 'd', dict(r=1,c=0,themes=StairTopThemes)
-        STAIR_U4_L1 = 'e', dict(r=1,c=1,themes=StairTopThemes)
-        STAIR_U4_R1 = 'f', dict(r=1,c=2,themes=StairTopThemes)
-        STAIR_U3_M0 = 'g', dict(r=1,c=3,themes=StairTopThemes)
-        STAIR_U3_L0 = 'h', dict(r=1,c=4,themes=StairTopThemes)
-        STAIR_U3_R0 = 'i', dict(r=1,c=5,themes=StairTopThemes)
-        STAIR_U4_M2 = 'j', dict(r=2,c=0,themes=StairTopThemes)
-        STAIR_U4_L2 = 'k', dict(r=2,c=1,themes=StairTopThemes)
-        STAIR_U4_R2 = 'l', dict(r=2,c=2,themes=StairTopThemes)
-        STAIR_U3_M1 = 'm', dict(r=2,c=3,themes=StairTopThemes)
-        STAIR_U3_L1 = 'n', dict(r=2,c=4,themes=StairTopThemes)
-        STAIR_U3_R1 = 'o', dict(r=2,c=5,themes=StairTopThemes)
-        STAIR_U4_M3 = 'p', dict(r=3,c=0,themes=StairTopThemes)
-        STAIR_U4_L3 = 'q', dict(r=3,c=1,themes=StairTopThemes)
-        STAIR_U4_R3 = 'r', dict(r=3,c=2,themes=StairTopThemes)
-        STAIR_U3_M2 = 's', dict(r=3,c=3,themes=StairTopThemes)
-        STAIR_U3_L2 = 't', dict(r=3,c=4,themes=StairTopThemes)
-        STAIR_U3_R2 = 'u', dict(r=3,c=5,themes=StairTopThemes)
-        STAIR_D2_M0 = '0', dict(r=0,c=0,themes=StairBotThemes)
-        STAIR_D2_L0 = '1', dict(r=0,c=1,themes=StairBotThemes)
-        STAIR_D2_R0 = '2', dict(r=0,c=2,themes=StairBotThemes)
-        STAIR_D2_M1 = '3', dict(r=1,c=0,themes=StairBotThemes)
-        STAIR_D2_L1 = '4', dict(r=1,c=1,themes=StairBotThemes)
-        STAIR_D2_R1 = '5', dict(r=1,c=2,themes=StairBotThemes)
+        STMAT_U4        = 'R', dict(r=0,c=0,w=IMAGE_SIZE*2,h=IMAGE_SIZE*4,themes=StairCarpetThemes)
+        STMAT_U3        = 'E', dict(r=1,c=2,w=IMAGE_SIZE*2,h=IMAGE_SIZE*3,themes=StairCarpetThemes)
+        STMAT_D2        = 'W', dict(r=4,c=0,w=IMAGE_SIZE*2,h=IMAGE_SIZE*2,themes=StairCarpetThemes)
 
-        STMAT_U4_L0 = 'B', dict(r=0,c=0,themes=StairCarpetThemes)
-        STMAT_U4_R0 = 'C', dict(r=0,c=1,themes=StairCarpetThemes)
-        STMAT_U4_L1 = 'E', dict(r=1,c=0,themes=StairCarpetThemes)
-        STMAT_U4_R1 = 'F', dict(r=1,c=1,themes=StairCarpetThemes)
-        STMAT_U3_L0 = 'H', dict(r=1,c=2,themes=StairCarpetThemes)
-        STMAT_U3_R0 = 'I', dict(r=1,c=3,themes=StairCarpetThemes)
-        STMAT_U4_L2 = 'K', dict(r=2,c=0,themes=StairCarpetThemes)
-        STMAT_U4_R2 = 'L', dict(r=2,c=1,themes=StairCarpetThemes)
-        STMAT_U3_L1 = 'N', dict(r=2,c=2,themes=StairCarpetThemes)
-        STMAT_U3_R1 = 'O', dict(r=2,c=3,themes=StairCarpetThemes)
-        STMAT_U4_L3 = 'Q', dict(r=3,c=0,themes=StairCarpetThemes)
-        STMAT_U4_R3 = 'R', dict(r=3,c=1,themes=StairCarpetThemes)
-        STMAT_U3_L2 = 'T', dict(r=3,c=2,themes=StairCarpetThemes)
-        STMAT_U3_R2 = 'U', dict(r=3,c=3,themes=StairCarpetThemes)
-        STMAT_D2_L0 = '6', dict(r=4,c=0,themes=StairCarpetThemes)
-        STMAT_D2_R0 = '7', dict(r=4,c=1,themes=StairCarpetThemes)
-        STMAT_D2_L1 = '8', dict(r=5,c=0,themes=StairCarpetThemes)
-        STMAT_D2_R1 = '9', dict(r=5,c=1,themes=StairCarpetThemes)
-
-        FLOORMAT_1  = 'v', dict(c=0,themes=FloorMatThemes)
-        FLOORMAT_2L = 'w', dict(c=1,themes=FloorMatThemes)
-        FLOORMAT_2R = 'x', dict(c=2,themes=FloorMatThemes)
+        FLOORMAT_1      = 'm', dict(c=0,themes=FloorMatThemes)
+        FLOORMAT_2      = 'M', dict(c=1,w=IMAGE_SIZE*2,themes=FloorMatThemes)
 
     class FloorThemes(SpriteTheme):
-        WOOD = 'wood', dict(c=0,r=5)
+        WOOD = 'wood', dict(c=0,r=10)
 
         def __init__(self, tag, kwargs):
-            super().__init__(tag, setDefault(kwargs, w = 4 * IMAGE_SIZE, h = 2 * IMAGE_SIZE, src = RoomSourceFiles.FLOORS))   
+            super().__init__(tag, setDefault(kwargs, src = RoomSourceFiles.FLOORS))   
 
     """
     012
     345
     """
     class FloorTiles(Sprite):
-        VOID        = ' ', dict(c=-1,r=-1,themes=NoTheme)
+        VOID = ' ', dict(isVoid=True)
+
         TOP_LEFT    = '0', dict(c= 0,r= 0)
         TOP         = '1', dict(c= 1,r= 0)
         TOP_RIGHT   = '2', dict(c= 2,r= 0)
@@ -276,10 +224,11 @@
         WHITE = "white", dict(c=0,r=0)
 
         def __init__(self, tag, kwargs):
-            super().__init__(tag, setDefault(kwargs, w = 11 * IMAGE_SIZE, h = 5 * IMAGE_SIZE, src = RoomSourceFiles.BORDERS,xoffset=2*IMAGE_SIZE))
+            super().__init__(tag, setDefault(kwargs, src = RoomSourceFiles.BORDERS,x=2*IMAGE_SIZE))
     
     class BorderTiles(Sprite):
-        VOID                    = ' ', dict(c=-1,r=-1,themes=NoTheme)
+        VOID = ' ', dict(isVoid=True)
+        
         WALL_R_OPEN_TB          = 'a', dict(r=0,c=0)
         WALL_L_OPEN_TB          = 'b', dict(r=0,c=1)
         BLOCK_CLOSED            = 'f', dict(r=0,c=5)
@@ -321,7 +270,7 @@
         BROWN = 'brown', dict(c=0,r=0)
 
         def __init__(self, tag, kwargs):
-            super().__init__(tag, setDefault(kwargs, w = 8 * IMAGE_SIZE, h = 7 * IMAGE_SIZE, src = RoomSourceFiles.WALLS))
+            super().__init__(tag, setDefault(kwargs, src = RoomSourceFiles.WALLS))
 
     """
     adjpPJDV
@@ -332,7 +281,8 @@
     CiouUOIx
     """
     class WallTiles(Sprite):
-        VOID                            = ' ', dict(c=-1,r=-1,themes=NoTheme)
+        VOID = ' ', dict(isVoid=True)
+
         TOP_END_LEFT                    = 'a', dict(c= 0,r= 0)
         BOT_END_LEFT                    = 'b', dict(c= 0,r= 1)
         MID_END_LEFT                    = 'c', dict(c= 0,r= 2)
@@ -385,14 +335,31 @@
         def __init__(self, char, kwargs):
             super().__init__(char, setDefault(kwargs, themes=WallThemes))
 
+    class DoorThemes(SpriteTheme):
+        GLASS_LEFT = "glass left", dict(src=DoorSourceFiles.GLASS_LEFT)
+        GLASS_RIGHT = "glass right", dict(src=DoorSourceFiles.GLASS_RIGHT)
+
+    class DoorSprites(Sprite):
+        VOID = ' ', dict(isVoid=True)
+
+        OPEN = "open", dict(c=4)
+        CLOSED = "closed", dict(c=0)
+        OPENING = "opening", dict(c=0, f=4)
+        CLOSING = "closing", dict(c=4, f=4)
+
+        def __init__(self, tag, kwargs):
+            super().__init__(tag, setDefault(kwargs, h=IMAGE_SIZE*3, themes=DoorThemes, anchory=IMAGE_SIZE*2))
+
     class CharacterThemes(SpriteTheme):
         PREMADE_17 = 'premade 17', dict(src=CharacterSourceFiles.CHARACTER_PREMADE_17)
 
         def __init__(self, tag, kwargs):
-            super().__init__(tag, setDefault(kwargs, refreshRate=0.01, x=0, y=0)) 
+            super().__init__(tag, setDefault(kwargs)) 
 
     class CharacterAnimations(Sprite):
-        DEFAULT     = "",               dict()
+        VOID = ' ', dict(isVoid=True)
+
+        DEFAULT     = "default",        dict()
         IDLE        = "idle",           dict(f=6, r=1)
         WALK        = "walk",           dict(f=6, r=2)
         SLEEP       = "sleep",          dict(f=6, r=3, right=0, up=0, left=0, down=0)
@@ -421,7 +388,70 @@
         HURT        = "hurt",           dict(f=3, r=19)
 
         def __init__(self, tag, kwargs):
-            super().__init__(tag, setDefault(kwargs, themes=CharacterThemes, width=IMAGE_SIZE, height=2*IMAGE_SIZE, none=0, right=0, up=1, left=2, down=3)) 
+            kwargs = setDefault(kwargs, themes=CharacterThemes, r=0, h=2*IMAGE_SIZE, none=0, right=0, up=1, left=2, down=3)
+            kwargs['r'] *= 2
+            super().__init__(tag, kwargs) 
+
+    class SpriteRenderHandler:
+        def __init__(self, sprite):
+            self.frame = 0
+            self.theme = VoidTheme.VOID
+            self.direction = Direction.NONE
+            self.dir_offset = sprite.directional_offsets[self.direction]
+            self.displayable = None
+            self.sprite = sprite
+
+        def build(self, frame=0, theme=VoidTheme.VOID, direction=Direction.NONE, position=(0,0)):
+            self.sprite, self.theme, self.direction, self.dir_offset, self.frame, pos, change = self.subBuild(frame, theme, direction, position)
+            if change: 
+                self.displayable = self.sprite.buildStatic(self.theme,self.frame,self.direction,nullable=False)
+            return (self.sprite.position(pos), self.displayable), change
+
+        def subBuild(self, frame, theme, direction, position):
+            return (position, None), False
+
+    class StaticSpriteRenderHandler(SpriteRenderHandler):
+        def __init__(self, sprite):
+            super().__init__(sprite)
+            self.isNone = sprite.themes == VoidTheme
+            self.notDynamic = sprite.frames <= 1 and len(sprite.themes) <= 1
+            if self.notDynamic:
+                for i in list(Direction):
+                    if sprite.directional_offsets[i] != self.dir_offset:
+                        self.notDynamic = False
+                        break
+        
+        def subBuild(self, frame, theme, direction, position):
+            if self.notDynamic and (self.isNone or self.displayable != None):
+                return self.sprite, self.theme, self.direction, self.dir_offset, self.frame, position, False
+            frame %= self.sprite.frames
+            dir_offset = self.sprite.directional_offsets[direction]
+            same = (theme,frame,dir_offset) == (self.theme,self.frame,self.dir_offset) and self.displayable is not None
+            return self.sprite, theme, direction, dir_offset, frame, position, (not same)
+    
+    class DynamicSpriteRenderHandler(SpriteRenderHandler):
+        def __init__(self, default=StaticSpriteTiles.VOID, getTheme=None, getFrame=None, getDirection=None, getSprite=None, getPosition=None, **kwargs):
+            super().__init__(default)
+            self.default = default
+            self.getTheme = getTheme
+            self.getFrame = getFrame
+            self.getDirection = getDirection
+            self.getSprite = getSprite
+            self.getPosition = getPosition
+            self.kwargs = kwargs
+        
+        def subBuild(self, frame, theme, direction, position=(0,0)):
+            s = self.default if self.getSprite is None else self.getSprite(**self.kwargs)
+            if s == None: s = self.default
+            t = theme if self.getTheme is None else self.getTheme(sprite=s, **self.kwargs)
+            d = direction if self.getDirection is None else self.getDirection(sprite=s, theme=t, **self.kwargs)
+            f = frame if self.getFrame is None else self.getFrame(sprite=s, theme=t, direction=d, **self.kwargs)
+            p = position if self.getPosition is None else self.getPosition(sprite=s, theme=t, direction=d, frame=f, **self.kwargs)
+            print(self.default, s, f, d, p, t)   
+            dir_offset = s.directional_offsets[d]
+            f %= s.frames
+            same = (s,t,dir_offset,f) == (self.sprite, self.theme, self.dir_offset, self.frame) and self.displayable is not None
+            return s, t, d, dir_offset, f, p, (not same)
 
     class Director:
         def __init__(self, dt=None):
@@ -446,38 +476,44 @@
     DEFAULT_DISPLAYABLE = Null()
 
     class AnimationDirector(Director):
-        def __init__(self):
+        def __init__(self, getPosition=None, x=0,y=0,r=0,c=0):
             super().__init__(FRAME_LENGTH)
-            self.theme = NoTheme.NONE
+            self.theme = VoidTheme.VOID
             self.frame = 0
             self.dir = Direction.NONE
             self.anims = []
-            self.displayable = DynamicDisplayable(self.__getDisplayable)
-            self.displayables = {}
+            self.position = (x + c*IMAGE_SIZE, y + r*IMAGE_SIZE)
+            self.getPos = getPosition
+            self.handler = DynamicSpriteRenderHandler(
+                getTheme=self.getTheme, 
+                getFrame=self.getFrame, 
+                getDirection=self.getDirection, 
+                getSprite=self.getSprite, 
+                getPosition=self.getPosition
+            )
+            self.listener = None
+            self.listenerKwargs = dict()
+        
+        def getPosition(self, **kwargs):
+            if self.getPos is not None:
+                return self.getPos()
+            else:
+                return self.position
 
-        def getDirection(self, st, at, sprite, theme):
+        def getHandler(self):
+            return self.handler
+
+        def getDirection(self, **kwargs):
             return self.dir
 
-        def getFrame(self, st, at, sprite, theme):
+        def getFrame(self, **kwargs):
             return self.frame
 
-        def getTheme(self, st, at, sprite):
+        def getTheme(self, **kwargs):
             return self.theme
 
-        def loadAnimations(self, *animations):
-            for anim in animations:
-                if not anim in self.displayables:
-                    self.displayables[anim] = anim.buildDynamic(None, self.getTheme, self.getFrame, self.getDirection, nullable=False)
-            return self
-
-        def getCurrentAnim(self):
+        def getSprite(self, **kwargs):
             return self.anims[0] if len(self.anims) > 0 else None
-
-        def __getDisplayable(self, st, at):
-            return self.displayables.get(self.getCurrentAnim(), DEFAULT_DISPLAYABLE), self.theme.refreshRate
-            
-        def getDisplayable(self):
-            return self.displayable
 
         def setDirection(self, direction):
             self.dir = direction
@@ -488,7 +524,6 @@
             return self
 
         def setAnimations(self, *anims):
-            self.loadAnimations(*anims)
             self.onCompleteAnim()
             self.anims = list(anims)
             self.frame = 0
@@ -496,7 +531,6 @@
             return self
         
         def addAnimations(self, *anims):
-            self.loadAnimations(*anims)
             self.anims += list(anims)
             return self
         
@@ -516,12 +550,20 @@
 
         def onCompleteAnim(self):
             anim = self.anims[0] if len(self.anims) > 0 else None
+            if self.listener is not None:
+                self.listener(anim, start=False, complete=True, **self.kwargs)
 
         def onStartAnim(self):
             anim = self.anims[0] if len(self.anims) > 0 else None
+            if self.listener is not None:
+                self.listener(anim, start=True, complete=False, **self.kwargs)
+
+        def setListener(self, listener=None, **kwargs):
+            self.listener=listener
+            self.listenerKwargs = kwargs
+            return self
 
         def interupt(self, anim):
-            self.loadAnimations(anim)
             self.onCompleteAnim()
             self.anims.insert(0,anim)
             self.frame = 0
@@ -529,7 +571,7 @@
             return self
 
         def incrementFrames(self, frames=1):
-            anim = self.getCurrentAnim()
+            anim = self.getSprite()
             frame = self.frame + frames
             if not anim is None:
                 frame %= anim.frames
@@ -542,32 +584,145 @@
             self.incrementFrames()
 
     renpy.add_layer("above", above="master")
-    renpy.add_layer("player", above="master")
+    renpy.add_layer("dynamic", above="master")
     renpy.add_layer("below", above="master")
 
-    class Map:
+    class MapReferenceLayer(Enum):
+        DYNAMIC=0
+        ABOVE=1,
+        BELOW=2
 
-        def init(self, rows, columns, b=None, p=None, a=None, w=None):
+    class MapReference:
+        def __init__(self, m, handler, layer, refId):
+            self.map = m
+            self.handler = handler
+            self.layer = layer
+            self.refId = refId
+            self.active = True
+        
+        def remove(self):
+            m.removeReference(self)
+    
+
+    class Interactions(Enum):
+        VOID = ' ', True
+        WALL = '0', False
+        LDOOR_L = 'l', None
+        LDOOR_R = 'L', None
+        RDOOR_L = 'r', None
+        RDOOR_R = 'R', None
+        I_LDOOR_L = 'i', True
+        I_LDOOR_R = 'I', True
+        I_RDOOR_L = 'j', True
+        I_RDOOR_R = 'J', True
+
+        def __new__(cls, char, walkable):
+            obj = builtins.object.__new__(cls)
+            obj._value_ = char
+            return obj
+
+        def __init__(self, char, walkable):
+            self.walkable = walkable
+
+
+    MAP_FRAME_RATE = 0.03
+
+    class Map(Director):
+
+        def __init__(self):
+            super().__init__(FRAME_LENGTH)
+            self.dynams = dict()
+            self.frame = 0
+
+        def init(self, rows, columns, b=None, d=None, a=None, i=None):
             self.rows = rows
             self.columns = columns
-            self.below = b
-            self.above = a
-            self.player = p
-            self.walkable = w
+            self.belows = b
+            self.aboves = a
+            if d is not None:
+                self.dynams = d
+            self.interactions = i
+            self.belowDis = DynamicDisplayable(self.build, MapReferenceLayer.BELOW)
+            self.aboveDis = DynamicDisplayable(self.build, MapReferenceLayer.ABOVE)
+            self.dynamDis = DynamicDisplayable(self.build, MapReferenceLayer.DYNAMIC)
 
-        def getAboveLayer(self):
-            return self.above
-
-        def getPlayerLayer(self):
-            return self.player
+        def addToLayer(self, layerRef, i=0, j=0, sprite=None, handler=None, refId=""):
+            if layerRef == MapReferenceLayer.DYNAMIC:
+                return self.addDynamic(handler, refId)
+            layer = self.belows if layerRef == MapReferenceLayer.BELOW else self.aboves if layerRef == MapReferenceLayer.ABOVE else None
+            if layer is None: None
+            if handler is None: handler = sprite.buildStaticHandler()
+            ref = MapReference(self, handler, layerRef, (i,j))
+            layer.append([(i,j,handler)])
+            return ref
         
-        def getBelowLayer(self):
-            return self.below
+        def addDynamic(self, handler, refId):
+            ref = MapReference(self, handler, MapReferenceLayer.DYNAMIC, refId)
+            self.dynams[refId] = handler
+            return ref
 
-        def getTheme(self, st, at, sprite):
-            if sprite.themes is None:
+        def removeReference(self, ref):
+            if not ref.active:
+                return
+            ref.active = False
+            if ref.layer == MapReferenceLayer.BELOW:
+                self.belows[ref.refId[0]][ref.refId[1]].remove(ref.handler)
+            elif ref.layer == MapReferenceLayer.ABOVE:
+                self.aboves[ref.refId[0]][ref.refId[1]].remove(ref.handler)
+            elif ref.layer == MapReferenceLayer.DYNAMIC:
+                self.dynams.pop(ref.refId)
+
+        def getLayer(self, layerRef):
+            if layerRef == MapReferenceLayer.BELOW:
+                return self.belowDis
+            elif layerRef == MapReferenceLayer.ABOVE:
+                return self.aboveDis
+            elif layerRef == MapReferenceLayer.DYNAMIC:
+                return self.dynamDis
+
+        def getTheme(self, handler):
+            if handler.sprite.themes is None:
                 return StaticSpriteThemes.NONE
-            return list(sprite.themes)[0]
+            return list(handler.sprite.themes)[0]
+
+        def getInteraction(self, i, j):
+            return self.interactions[i][j]
+
+        def setInteraction(self, i, j, interaction):
+            self.interactions[i][j] = interaction
+
+        def build(self, st, at, layerRef):
+            if layerRef == MapReferenceLayer.DYNAMIC:
+                return self.buildDynamics(st, at)
+
+            layer = self.belows if layerRef == MapReferenceLayer.BELOW else self.aboves if layerRef == MapReferenceLayer.ABOVE else None
+            if layer is None: return Null(), None
+            
+            compose = []
+            for l in layer:
+                for i,j,handler in l:
+                    offset = (j * IMAGE_SIZE, i * IMAGE_SIZE)
+                    img,change = handler.build(
+                        theme=self.getTheme(handler),
+                        frame=self.frame,
+                        position = offset
+                    )
+                    if img is None or img[1] is None: continue
+                    compose.extend(img)
+            return Composite((self.columns * IMAGE_SIZE, self.rows*IMAGE_SIZE), *compose), MAP_FRAME_RATE
+        
+        def buildDynamics(self, st, at):
+            compose = []
+            for refId in self.dynams:
+                handler = self.dynams[refId]
+                img,change = handler.build(frame=self.frame)
+                if img is None or img[1] is None: continue
+                compose.extend(img)
+            return Composite((self.columns * IMAGE_SIZE, self.rows*IMAGE_SIZE), *compose), MAP_FRAME_RATE
+
+
+        def onLoopSub(self, trans, st, at):
+            self.frame += 1
 
         def getCollisions(self, px, py, pw, ph): 
             x = px / IMAGE_SIZE
@@ -579,12 +734,22 @@
             br = int(x2), int(y2)
             collisions = []
             walkable = True
-            for j in range(tl[0], min(br[0]+1, self.columns)):
-                for i in range(tl[1], min(br[1]+1, self.rows)):
-                    collisions.append((j,i))
-                    walkable &= self.walkable[i][j]
+            for i in range(tl[1], min(br[1]+1, self.rows)):
+                for j in range(tl[0], min(br[0]+1, self.columns)):
+                    inter = self.interactions[i][j]
+                    w = inter.walkable
+                    if w is None:
+                        if inter == Interactions.LDOOR_L:
+                            w = door.left.isLeftOpen()
+                        elif inter == Interactions.LDOOR_R:
+                            w = door.left.isRightOpen()
+                        elif inter == Interactions.RDOOR_L:
+                            w = door.right.isLeftOpen()
+                        elif inter == Interactions.RDOOR_R:
+                            w = door.right.isRightOpen()
+                    walkable &= w
+                    collisions.append((i,j,self.interactions[i][j]))
             
-            print(x, y, x2, y2, pw / IMAGE_SIZE, ph / IMAGE_SIZE, tl, br, collisions, walkable)
             return collisions, walkable
 
     class MapFactory:
@@ -592,64 +757,56 @@
             self.rows = rows
             self.columns = columns
             self.belows = []
-            self.players = []
             self.aboves = []
-            self.walkable = [[False for _ in range(columns)] for _ in range(rows)]
+            self.interactions = [[Interactions.VOID for _ in range(columns)] for _ in range(rows)]
 
         def addBelowLayer(self, fromCls, *values):
-            self.belows.append(self.__createLayer(*values, fromCls=fromCls))
+            self.__addLayer(self.belows, *values, fromCls=fromCls)
             return self
         
         def addAboveLayer(self, fromCls, *values):
-            self.aboves.append(self.__createLayer(*values, fromCls=fromCls))
+            self.__addLayer(self.aboves, *values, fromCls=fromCls)
             return self
-
-        def addPlayerLayer(self, fromCls, *values):
-            self.players.append(self.__createLayer(*values, fromCls=fromCls))
-            return self
-
-        def __createLayer(self, *values, fromCls=None):
-            l = [[StaticSpriteTiles.VOID for _ in range(self.columns)] for _ in range(self.rows)]
-            for i in range(self.rows):
-                for j in range(self.columns):
-                    if fromCls is not None:
-                        l[i][j] = fromCls(values[i][j])
-                    else:
-                        l[i][j] = values[i][j]
-            return l
         
-        def setWalkable(self, *values):
-            for i in range(self.rows):
-                for j in range(self.columns):
-                    self.walkable[i][j] = bool(int(values[i][j]))
+        def addAbove(self, i, j, sprite):
+            self.aboves.append([(i,j,sprite)])
+            return self
+        
+        def addBelow(self, i, j, sprite):
+            self.belows.append([(i,j,sprite)])
             return self
 
-        def __buildLayer(self, m, layer):
-            ls = []
-            for l in layer:
-                compose = []
-                for i in range(self.rows):
-                    for j in range(self.columns):
-                        img = l[i][j].buildDynamic(None, m.getTheme)
-                        if img is None: continue
-                        offset = (j * IMAGE_SIZE, i * IMAGE_SIZE)
-                        compose += [offset, img]
-                ls.append(Composite((self.columns * IMAGE_SIZE, self.rows * IMAGE_SIZE), *compose))
-            c = []
-            for l in ls:
-                c.append((0,0))
-                c.append(l)
-            return Composite((self.columns * IMAGE_SIZE, self.rows * IMAGE_SIZE), *c)
+        def __addLayer(self, layer, *values, fromCls=None):
+            l = []
+            for i in range(self.rows):
+                for j in range(self.columns):
+                    img = None
+                    if fromCls is not None:
+                        img = fromCls(values[i][j])
+                    else:
+                        img = values[i][j]
+                    if img.themes != VoidTheme and not img.isVoid:
+                        l.append((i,j,img))
+            layer.append(l)
+
+        def setInteractions(self, *values):
+            for i in range(self.rows):
+                for j in range(self.columns):
+                    self.interactions[i][j] = Interactions(values[i][j])
+            return self
 
         def build(self, m=None):
             if m is None:
                 m = Map()
+            
+            belows = [[(i,j,sprite.buildStaticHandler()) for (i,j,sprite) in layer] for layer in self.belows]
+            aboves = [[(i,j,sprite.buildStaticHandler()) for (i,j,sprite) in layer] for layer in self.aboves]
+
             m.init(
                 self.rows, self.columns, 
-                w=self.walkable, 
-                a=self.__buildLayer(m, self.aboves), 
-                b=self.__buildLayer(m, self.belows), 
-                p=self.__buildLayer(m, self.players)
+                i=self.interactions, 
+                b=belows,
+                a=aboves
             )
             return m
 
@@ -657,7 +814,7 @@
 
     class MovementDirector(Director):
         def __init__(self, m):
-            super().__init__(0.03)
+            super().__init__(0.02)
             self.x = 4 * IMAGE_SIZE
             self.y = 4 * IMAGE_SIZE
             self.speed = 0
@@ -680,6 +837,9 @@
             self.cwidth = int(width)
             self.cheight = int(height)
             return self
+
+        def getPosition(self, **kwargs):
+            return int(self.x), int(self.y)
 
         def move(self):
             sx = sy = 0
@@ -707,6 +867,9 @@
                 self.x = newx
                 self.y = newy
 
+        def getInteracting(self):
+            return self.map.getCollisions(self.x + self.cxoffset, self.y + self.cyoffset, self.cwidth, self.cheight)[0]
+
         def onLoopSub(self, trans, st, at):
             self.move()
             trans.pos = (int(self.x), int(self.y))
@@ -714,11 +877,11 @@
 
     class CharacterDirector(Director):
         def __init__(self, movementDirector, animationDirector):
-            super().__init__(0.03)
+            super().__init__(0.02)
             self.move = movementDirector
             self.anim = animationDirector
             self.facing = Direction.DOWN
-            self.move.setSpeed(IMAGE_SIZE * 2)
+            self.move.setSpeed(IMAGE_SIZE * 3)
             self.anim.setDirection(self.facing)
             self.moving = True
             self.dirs = []
@@ -734,6 +897,15 @@
 
         def onInteract(self):
             self.anim.interupt(CharacterAnimations.HIT)
+            for x,y,i in self.move.getInteracting():
+                if i == Interactions.I_LDOOR_L:
+                    door.left.openLeft()
+                elif i == Interactions.I_LDOOR_R:
+                    door.left.openRight()
+                elif i == Interactions.I_RDOOR_L:
+                    door.right.openLeft()
+                elif i == Interactions.I_RDOOR_R:
+                    door.right.openRight()
 
         def __updateMoving(self):
             self.dirs = [d for d in self.dirs if d != Direction.NONE]
@@ -770,6 +942,29 @@
             self.add = add
             self.remove = remove
             self.toggle = toggle
+            self.rightOpen = False
+            self.leftOpen = False
+            self.animDirector = None
+
+        def isLeftOpen(self):
+            return self.leftOpen
+        
+        def isRightOpen(self):
+            return self.rightOpen
+
+        def openLeft(self):
+            if not self.leftOpen:
+                self.animDirector[0].setAnimations(DoorSprites.OPENING, DoorSprites.OPEN)
+            else:
+                self.animDirector[0].setAnimations(DoorSprites.CLOSING, DoorSprites.CLOSED)
+            self.leftOpen = not self.leftOpen
+        
+        def openRight(self):
+            if not self.rightOpen:
+                self.animDirector[1].setAnimations(DoorSprites.OPENING, DoorSprites.OPEN)
+            else:
+                self.animDirector[1].setAnimations(DoorSprites.CLOSING, DoorSprites.CLOSED)
+            self.rightOpen = not self.rightOpen
 
         def select(self):
             return Door(DoorSide.CURRENT, ((self.params | self.add) & (~self.remove)) ^ self.toggle)
@@ -780,8 +975,6 @@
         def right(self, add = Params.NONE, remove = Params.NONE, toggle = Params.NONE):
             return Door(DoorSide.RIGHT, self.params, add, remove, toggle)
         
-
-    playerAnim = AnimationDirector().loadAnimations(CharacterAnimations.WALK, CharacterAnimations.IDLE, CharacterAnimations.HIT).setTheme(CharacterThemes.PREMADE_17).start()
     thisMap = MapFactory(12,14).addBelowLayer(FloorTiles,
         "              ",
         "              ",
@@ -809,30 +1002,30 @@
         "l            L",
         "ouuuu   uuuuuO"
     ).addBelowLayer(CondoInteriorTiles,
-        "  kl      kl  ",
-        "  ef      ef  ",
-        "  kl      kl  ",
-        "  qr      qr  ",
-        "  wx      wx  ",
+        "  rv      rv  ",
+        "              ",
+        "              ",
+        "              ",
+        "              ",
+        "  M       M   ",
         "              ",
         "              ",
         "              ",
         "      wx      ",
-        "      12      ",
-        "      45      ",
+        "              ",
         "              "
     ).addBelowLayer(CondoInteriorTiles,
-        "  KL      KL  ",
-        "  EF      EF  ",
-        "  KL      KL  ",
-        "  QR      QR  ",
-        "  wx      wx  ",
+        "  R       R   ",
         "              ",
         "              ",
         "              ",
-        "      wx      ",
-        "      67      ",
-        "      89      ",
+        "              ",
+        "              ",
+        "              ",
+        "              ",
+        "              ",
+        "      W       ",
+        "              ",
         "              "
     ).addAboveLayer(WallTiles,
         "              ",
@@ -847,26 +1040,54 @@
         "     i  I     ",
         "     i  I     ",
         "     ouuO     "
-    ).setWalkable(
-        "00110000001100",
-        "00110000001100",
-        "00110000001100",
-        "00110000001100",
-        "00110000001100",
-        "01111111111110",
-        "01111111111110",
-        "01111111111110",
-        "01111111111110",
-        "01111011011110",
-        "01111011011110",
-        "00000011000000"
+    ).addBelowLayer(StaticSpriteTiles,
+        "              ",
+        "              ",
+        "              ",
+        "              ",
+        "              ",
+        "      f       ",
+        "              ",
+        "              ",
+        "              ",
+        "              ",
+        " c            ",
+        "              "
+    ).setInteractions(
+        "00  000000  00",
+        "00  000000  00",
+        "00  000000  00",
+        "00  000000  00",
+        "00lL000000rR00",
+        "0 iI  00  jJ 0",
+        "0            0",
+        "0            0",
+        "0            0",
+        "0    0  0    0",
+        "0000 0  0    0",
+        "000000  000000"
     ).build()
     playerMove = MovementDirector(thisMap).setCollisionBox(0, IMAGE_SIZE * 1.5, IMAGE_SIZE, IMAGE_SIZE * 0.5).start()
-    player = CharacterDirector(playerMove, playerAnim).start()
+    playerAnim = AnimationDirector(playerMove.getPosition).setTheme(CharacterThemes.PREMADE_17).start()
+
+    doorLeftAnimLeft = AnimationDirector(r=4,c=2).setTheme(DoorThemes.GLASS_LEFT).setAnimations(DoorSprites.CLOSED)
+    doorLeftAnimRight = AnimationDirector(r=4,c=3).setTheme(DoorThemes.GLASS_RIGHT).setAnimations(DoorSprites.CLOSED)
+    doorRightAnimLeft = AnimationDirector(r=4,c=10).setTheme(DoorThemes.GLASS_LEFT).setAnimations(DoorSprites.CLOSED)
+    doorRightAnimRight = AnimationDirector(r=4,c=11).setTheme(DoorThemes.GLASS_RIGHT).setAnimations(DoorSprites.CLOSED)
+    doorLeftAnimLeftRef = thisMap.addDynamic(doorLeftAnimLeft.getHandler(), "doorLeftAnimLeft")
+    doorLeftAnimRightRef = thisMap.addDynamic(doorLeftAnimRight.getHandler(), "doorLeftAnimRight")
+    doorRightAnimLeftRef = thisMap.addDynamic(doorRightAnimLeft.getHandler(), "doorRightAnimLeft")
+    doorRightAnimRightRef = thisMap.addDynamic(doorRightAnimRight.getHandler(), "doorRightAnimRight")
+
+    playerDisplayableReference = thisMap.addDynamic(playerAnim.getHandler(), "player")
+    player = CharacterDirector(playerMove, playerAnim)
 
 define door.current = Door(DoorSide.CURRENT, Params.DEFAULT)
 define door.left = door.current.left()
 define door.right = door.current.right()
+init python:
+    door.left.animDirector = (doorLeftAnimLeft, doorLeftAnimRight)
+    door.right.animDirector = (doorRightAnimLeft,doorRightAnimRight)
 
 transform loop(director):
     function director.onLoop
@@ -881,10 +1102,10 @@ transform characterLoop(cd):
     parallel:
         loop(cd)
 
-image img = playerAnim.getDisplayable()
-image a = thisMap.getAboveLayer()
-image b = thisMap.getBelowLayer()
-image p = thisMap.getPlayerLayer()
+image a = thisMap.getLayer(MapReferenceLayer.ABOVE)
+image b = thisMap.getLayer(MapReferenceLayer.BELOW)
+image d = thisMap.getLayer(MapReferenceLayer.DYNAMIC)
+image loopIt = Null()
 
 screen keymap_screen():
     zorder 9999
@@ -903,10 +1124,15 @@ label start:
     #camera player:
     #    perspective True
     #    zzoom True
-    show b at topleft onlayer below
-    show p at topleft onlayer player
-    show img at characterLoop(player) onlayer player
-    show a at topleft onlayer above
+    show b at truecenter onlayer below
+    show d at truecenter onlayer dynamic
+    show a at truecenter onlayer above
+    show loopIt at characterLoop(player.start()) as player
+    show loopIt at loop(thisMap.start()) as map
+    show loopIt at loop(doorLeftAnimLeft.start()) as ldl
+    show loopIt at loop(doorLeftAnimRight.start()) as ldr
+    show loopIt at loop(doorRightAnimLeft.start()) as rdl
+    show loopIt at loop(doorRightAnimRight.start()) as rdr
     
     "right"
     $ playerAnim.setDirection(Direction.LEFT)
