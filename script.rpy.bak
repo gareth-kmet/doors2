@@ -655,8 +655,6 @@
         I_RDOOR_R   = 'J', dict(w=True, d=Direction.RIGHT, sub_d=Direction.RIGHT, isDoorInteract=True)
         NAV_LEFT    = 'n', dict(w=True, d=Direction.LEFT, isNavPoint=True)
         NAV_RIGHT   = 'N', dict(w=True, d=Direction.RIGHT, isNavPoint=True)
-        CLOSE_L     = 'c', dict(w=True, d=Direction.LEFT, isDoorClose=True)
-        CLOSE_R     = 'C', dict(w=True, d=Direction.RIGHT, isDoorClose=True)
 
         def __new__(cls, char, *args):
             obj = builtins.object.__new__(cls)
@@ -666,14 +664,13 @@
         def __init__(self, char, kwargs):
             self.__setup(**kwargs)
 
-        def __setup(self, w=None, d=Direction.NONE, sub_d = Direction.NONE, isDoor=False, isDoorInteract=False, isNavPoint=False, isDoorClose=False):
+        def __setup(self, w=None, d=Direction.NONE, sub_d = Direction.NONE, isDoor=False, isDoorInteract=False, isNavPoint=False):
             self.walkable = w
             self.isDoor = isDoor
             self.isDoorInteract = isDoorInteract
             self.direction = d
             self.subDirection = sub_d
             self.isNavPoint = isNavPoint
-            self.isDoorClose = isDoorClose
 
         def door(self):
             return doors[self.direction]
@@ -688,8 +685,6 @@
                 return self.door().interact(self.subDirection, intType, interactionID, **kwargs)
             elif self.isNavPoint:
                 return doors.navigate(self.direction, intType, interactionID, **kwargs)
-            elif self.isDoorClose:
-                return self.door().closeInteraction(intType, interactionID, **kwargs)
             else:
                 return False
 
@@ -1096,15 +1091,8 @@
                 dirs.add(face)
 
             self.interacting = self.move.fetchInteractions(True)
-            c = Keyboard.INTERACT.changed("player")
-            d = Keyboard.INTERACT.down("player")
-            t2 = InteractingType.KEY_PRESSED if c and d else (
-                    InteractingType.KEY_RELEASE if c else (
-                        InteractingType.KEY_STATIC_DOWN if d else InteractingType.NONE
-                    )
-                )
 
-            showInteractionAnimation = self.__runInteractions(InteractingType.BEFORE_ANIMATION | t2, True)
+            showInteractionAnimation = self.__runInteractions(InteractingType.BEFORE_ANIMATION, True)
 
             if showInteractionAnimation:
                 self.anim.interupt(CharacterAnimations.HIT)
@@ -1157,25 +1145,33 @@
             self.moving = False
             self.disableKeyPress = False
 
-        def __runInteractions(self, baseType=InteractingType.NONE, withCollisions=False, isInteraction=False):
+        def __runInteractions(self, baseType=InteractingType.NONE, withCollisions=False):
             showInteractionAnimation = False
             self.interactions += 1
             collisions, lastOn, on = self.interacting
 
             t1 = baseType
+            c = Keyboard.INTERACT.changed("player")
+            d = Keyboard.INTERACT.down("player")
+            t2 = InteractingType.KEY_PRESSED if c and d else (
+                    InteractingType.KEY_RELEASE if c else (
+                        InteractingType.KEY_STATIC_DOWN if d else InteractingType.NONE
+                    )
+                )
+            t3 = t1 | t2
 
             for x,y,i in on:
                 t4 = InteractingType.STATIC if (x,y,i) in lastOn else InteractingType.ENTER 
-                showInteractionAnimation = i.interact(t1 | t4, interactionID=("player", self.interactions)) or showInteractionAnimation
+                showInteractionAnimation = i.interact(t3 | t4, interactionID=("player", self.interactions)) or showInteractionAnimation
 
             for x,y,i in lastOn - on:
                 t4 = InteractingType.LEAVE
-                showInteractionAnimation = i.interact(t1 | t4, interactionID=("player", self.interactions)) or showInteractionAnimation
+                showInteractionAnimation = i.interact(t3 | t4, interactionID=("player", self.interactions)) or showInteractionAnimation
 
             if withCollisions:
                 for x,y,i in collisions - on:
                     t4 = InteractingType.COLLISION
-                    showInteractionAnimation = i.interact(t1 | t4, interactionID=("player", self.interactions)) or showInteractionAnimation
+                    showInteractionAnimation = i.interact(t3 | t4, interactionID=("player", self.interactions)) or showInteractionAnimation
             
             return showInteractionAnimation
 
@@ -1187,7 +1183,7 @@
             self.anim.clearListener()
             self.disableKeyPress = False
             self.interactions += 1
-            self.__runInteractions(InteractingType.AFTER_ANIMATION | InteractingType.KEY_PRESSED)
+            self.__runInteractions(InteractingType.AFTER_ANIMATION)
     
     
     class Params(Flag):
@@ -1205,8 +1201,8 @@
         IS_CLOSED_BEFORE_ANIM           = auto()
         CLIP_IF_COLLIDING               = auto() 
         NO_CLOSE_ON_COLLIDING           = auto() 
-        HAS_COOLDOWN                    = auto()
-        CLOSE_BEHIND                    = auto()
+        HAS_COOLDOWN                    = auto() # TODO
+        CLOSE_BEHIND                    = auto() # TODO
         CUTSCENE                        = auto()
         LOADING_SCREEN                  = auto() 
         DEFAULT = IS_PORTAL | HAS_OPEN_ANIM | CLIP_IF_COLLIDING | LOADING_SCREEN
@@ -1261,8 +1257,6 @@
             self.params = self[side].params
             renpy.jump(self[side].label)
             return False
-    
-    DOOR_COOLDOWN = 1.0
 
     class Door(Director):
 
@@ -1286,7 +1280,6 @@
             self.anims[Direction.RIGHT].setListener(self.onAnimationTrigger, subSide=Direction.RIGHT)
             self.lastInteraction = dict()
             self.reset(self.label, self.params)
-            self.sinceLast = 0
 
         def getPosition(self, **kwargs):
             return (0,0)
@@ -1296,7 +1289,6 @@
             self.params = params
             self[Direction.LEFT] = DoorStates.CLOSED
             self[Direction.RIGHT] = DoorStates.CLOSED
-            self.sinceLast = 0
 
         def __getitem__(self, side):
             return self.states[side]
@@ -1320,12 +1312,11 @@
             if InteractingType.COLLISION in intType: return False
             if Params.IS_INTERACT in self.params:
                 if not InteractingType.KEY_PRESSED in intType: return False
-                if Params.HAS_COOLDOWN in self.params and self.sinceLast > 0: return False
             else: 
                 if not InteractingType.ENTER in intType: return False
             
             anim = Params.PLAYER_HAS_OPEN_ANIM in self.params
-            if anim and Params.START_OPEN_AFTER_PLAYER_ANIM in self.params and not InteractingType.AFTER_ANIMATION in intType:
+            if anim and Params.START_OPEN_AFTER_PLAYER_ANIM in self.params and InteractingType.AFTER_ANIMATION in intType:
                 return True
             if anim and not Params.START_OPEN_AFTER_PLAYER_ANIM in self.params and not InteractingType.BEFORE_ANIMATION in intType:
                 return True
@@ -1341,8 +1332,6 @@
                 coll = player.queryCollision()[2]
                 if len([i for x,y,i in coll if i.isDoor and i.direction == self.side]) > 0:
                     return False
-            
-            self.sinceLast = DOOR_COOLDOWN
 
             if Params.CAN_OPEN_INDIVIDUAL in self.params:
                 self.switchState(subSide)
@@ -1351,14 +1340,6 @@
                 self.switchState(Direction.RIGHT)
 
             return anim
-        
-        def closeInteraction(self, intType, interactionID=None, **kwargs):
-            if Params.CLOSE_BEHIND not in self.params: return False
-            if self[Direction.LEFT] == DoorStates.OPEN:
-                self.switchState(Direction.LEFT)
-            if self[Direction.RIGHT] == DoorStates.OPEN:
-                self.switchState(Direction.RIGHT)
-            return False
 
         def switchState(self, subSide):
             if self[subSide] == DoorStates.OPEN and Params.CAN_CLOSE in self.params:
@@ -1384,8 +1365,6 @@
         def onLoopSub(self, trans, st, at):
             self.anims[Direction.LEFT].onLoop(trans,st,at)
             self.anims[Direction.RIGHT].onLoop(trans,st,at)
-            self.sinceLast -= FRAME_LENGTH
-            self.sinceLast = max(0, self.sinceLast)
 
         def select(self):
             return ((self.params | self.add) & (~self.remove)) ^ self.toggle
@@ -1486,7 +1465,7 @@
     ).setInteractions(
         "00  000000  00",
         "00nn000000NN00",
-        "00cc000000CC00",
+        "00  000000  00",
         "00  000000  00",
         "00lL000000rR00",
         "0 iI  00  jJ 0",
@@ -1613,7 +1592,7 @@ label setup():
 label isInteract:
     $ room.yes_init = "hasOpenAnim", Params.IS_INTERACT, Params.NONE
     $ room.no_init = "hasOpenAnim", Params.NONE, Params.IS_INTERACT
-    call setup from _call_setup
+    call setup
     "Doors are pretty simple right? {w}Implementing one in a game should be the quickest thing ever, right?"
     "Only a couple decisions to make..."
     question "Does the player need to {color=[room.yes.textColour]}interact{/color} with the door or can they just {color=[room.no.textColour]}walk up{/color} to the door?\n\n{size=*0.5}Use [[{i}W,A,S,D{/i}] to move and [[{i}E{/i}] to interact{/size}"
@@ -1621,7 +1600,7 @@ label isInteract:
 label hasOpenAnim:
     $ room.yes_init = "isOpenBeforeAnim", Params.HAS_OPEN_ANIM, Params.NONE
     $ room.no_init = "playerHasOpenAnim", Params.NONE, Params.HAS_OPEN_ANIM
-    call setup from _call_setup_1
+    call setup
     "Well done!"
     "One decision down! ...{w} Only a few more to go"
     question "Does the door have an {color=[room.yes.textColour]}opening animation{/color} or does it just have an {color=[room.no.textColour]}open and closed sprited{/color}?"
@@ -1629,28 +1608,28 @@ label hasOpenAnim:
 label isOpenBeforeAnim:
     $ room.yes_init = "playerHasOpenAnim", Params.IS_OPEN_BEFORE_ANIM, Params.NONE
     $ room.no_init = "playerHasOpenAnim", Params.NONE, Params.IS_OPEN_BEFORE_ANIM
-    call setup from _call_setup_2
+    call setup
     "If it has an animation then when is it no longer a wall and becomes an entrance?"
     question "Is the door open when the animation {color=[room.yes.textColour]}starts{/color} or is it closed until the {color=[room.no.textColour]}end{/color} of the animtion?"
 
 label playerHasOpenAnim:
     $ room.yes_init = "openAfterPlayerAnim", Params.PLAYER_HAS_OPEN_ANIM, Params.NONE
     $ room.no_init = "openIndividual", Params.NONE, Params.PLAYER_HAS_OPEN_ANIM
-    call setup from _call_setup_3
-    "How about the player?{w} We can't forget about the player..."
+    call setup
+    "Hopw about the player?{w} We can't forget about the player..."
     question "Does the player get an {color=[room.yes.textColour]}animation{/color} when they're opening the door or is the player just their {color=[room.no.textColour]}static idle{/color} sprite?"
 
 label openAfterPlayerAnim:
     $ room.yes_init = "openIndividual", Params.START_OPEN_AFTER_PLAYER_ANIM, Params.NONE
     $ room.no_init = "openIndividual", Params.NONE, Params.START_OPEN_AFTER_PLAYER_ANIM
-    call setup from _call_setup_4
+    call setup
     "In that case, when does the door open?"
-    question "Does the door start opening when the player's animation {color=[room.no.textColour]}starts{/color} or does it have to wait until the player's animation {color=[room.yes.textColour]}ends{/color}?"
+    question "Does the door start opening when the player's animation {color=[room.yes.textColour]}starts{/color} or does it have to wait until the player's animation {color=[room.no.textColour]}ends{/color}?"
 
 label openIndividual:
     $ room.yes_init = "openBothIndividual", Params.CAN_OPEN_INDIVIDUAL, Params.NONE
     $ room.no_init = "loadingScreen", Params.NONE, Params.CAN_OPEN_INDIVIDUAL
-    call setup from _call_setup_5
+    call setup
     "Great answers! {w}Just a few more to go...{w}\n\n{size=*0.5}As long as you don't choose hard stuff{/size}"
     "Our door here is actualy two doors!!! {w} ... {w} or is it?"
     question "Can the two halves been opened {color=[room.yes.textColour]}individually{/color} or is opening one the same as opening {color=[room.no.textColour]}both{/color}?"
@@ -1658,7 +1637,7 @@ label openIndividual:
 label openBothIndividual:
     $ room.yes_init = "loadingScreen", Params.CAN_OPEN_INDIVIDUAL_BOTH, Params.NONE
     $ room.no_init = "loadingScreen", Params.NONE, Params.CAN_OPEN_INDIVIDUAL_BOTH
-    call setup from _call_setup_6
+    call setup
     "There ya go...{w} No need to conform to the masses here {w} Being unique is the best thing possible"
     "But what if those want to fit in and not be left out?"
     question "Can the two halves been opened {color=[room.yes.textColour]}at the same time{/color} or must they be opened {color=[room.no.textColour]}one after the other{/color}?"
@@ -1666,33 +1645,33 @@ label openBothIndividual:
 label loadingScreen:
     $ room.yes_init = "isPortal", Params.LOADING_SCREEN, Params.NONE
     $ room.no_init = "isPortal", Params.NONE, Params.LOADING_SCREEN
-    call setup from _call_setup_7
+    call setup
     "On a complety different note, do the doors need to be annoying?"
     "As you've seen, the doors need to load the next room after you enter them {w}\n Is this always the case?"
     question "Do the doors need to have a {color=[room.yes.textColour]}loading screen{/color} after entering them or do they just switch (or not even need to switch in some cases) {color=[room.no.textColour]}immediately{/color} to the next location?"
 
 label isPortal:
-    $ room.yes_init = "hasCutscene", Params.IS_PORTAL, Params.NONE
-    $ room.no_init = "canClose", Params.NONE, Params.IS_PORTAL
-    call setup from _call_setup_8
+    $ room.yes_init = "canClose", Params.IS_PORTAL, Params.NONE
+    $ room.no_init = "hasCutscene", Params.NONE, Params.IS_PORTAL
+    call setup
     question "Furthermore, do we even need to {color=[room.no.textColour]}walk through the doors{/color} or can they just {color=[room.yes.textColour]}teleport{/color} us once opened?"
 
 label hasCutscene:
     $ room.yes_init = "end", Params.CUTSCENE, Params.NONE
     $ room.no_init = "end", Params.NONE, Params.CUTSCENE
-    call setup from _call_setup_9
+    call setup
     question "Should we show the player a {color=[room.yes.textColour]}cutscene{/color} when they're being teleported or should they just move {color=[room.no.textColour]}immediately{/color}?"
 
 label canClose:
     $ room.yes_init = "intermediate1", Params.CAN_CLOSE, Params.NONE
     $ room.no_init = "closeDoorsBehind", Params.NONE, Params.CAN_CLOSE
-    call setup from _call_setup_10
+    call setup
     "Good point! Doors are doors not portals"
     "On that note, doors usually don't get stuck in one direction..."
     question "Can doors be {color=[room.yes.textColour]}closed{/color} after being opened or are they forever {color=[room.no.textColour]}stuck{/color}?"
 
 label intermediate1:
-    if Params.CAN_OPEN_INDIVIDUAL in doors.params and Params.CAN_OPEN_INDIVIDUAL_BOTH in doors.params:
+    if Params.CAN_OPEN_INDIVIDUAL in doors.params and Params.CAN_OPEN_INDIVIDUAL_BOTH in doors.Params:
         jump oppositeActions
     else:
         jump intermediate2
@@ -1700,7 +1679,7 @@ label intermediate1:
 label oppositeActions:
     $ room.yes_init = "intermediate2", Params.TOGGLES_INDIVIDUAL, Params.NONE
     $ room.no_init = "intermediate2", Params.NONE, Params.TOGGLES_INDIVIDUAL
-    call setup from _call_setup_11
+    call setup
     "But we said that the doors can be opened individually and opened at the same time... {w} So can we we open/close at the same time?"
     question "Can the doors be opening and closing at {color=[room.yes.textColour]}the same time{/color} or if one is open we should {color=[room.no.textColour]}only be able to open{/color} the other?"
 
@@ -1713,7 +1692,7 @@ label intermediate2:
 label closedBeforeAnim:
     $ room.yes_init = "noCloseOnColiding", Params.IS_CLOSED_BEFORE_ANIM, Params.NONE
     $ room.no_init = "noCloseOnColiding", Params.NONE, Params.IS_CLOSED_BEFORE_ANIM
-    call setup from _call_setup_12
+    call setup
     "On to the next point..."
     "You said earlier that the door has an opening animation..."
     "Well that means the door has a closing animation too..."
@@ -1723,7 +1702,7 @@ label closedBeforeAnim:
 label hasCooldown:
     $ room.yes_init = "noCloseOnColiding", Params.HAS_COOLDOWN, Params.NONE
     $ room.no_init = "noCloseOnColiding", Params.NONE, Params.HAS_COOLDOWN
-    call setup from _call_setup_13
+    call setup
     "On to the next point..."
     "You said earlier that the door does not have an opening animation..."
     "Well that means the door doesn't have a closing animation either..."
@@ -1733,7 +1712,7 @@ label hasCooldown:
 label noCloseOnColiding:
     $ room.yes_init = "closeDoorsBehind", Params.NO_CLOSE_ON_COLLIDING, Params.NONE
     $ room.no_init = "clipThroughDoors", Params.NONE, Params.NO_CLOSE_ON_COLLIDING
-    call setup from _call_setup_14
+    call setup
     "As you may have seen, the doors were nicely put at the front of the walls opening backwards so that we wouldn't have to deal with small collision boxes"
     "But now you've gone ahead and messed that all up by saying the player can close the door"
     "So what now?"
@@ -1745,7 +1724,7 @@ label noCloseOnColiding:
 label clipThroughDoors:
     $ room.yes_init = "closeDoorsBehind", Params.CLIP_IF_COLLIDING, Params.NONE
     $ room.no_init = "closeDoorsBehind", Params.NONE, Params.CLIP_IF_COLLIDING
-    call setup from _call_setup_15
+    call setup
     "That was a joke... Please don't select that choice"
     "I'll give you another option..."
     question "How about we just give them god mod and allow them to {color=[room.yes.textColour]}clip through the door{/color} instead of {color=[room.no.textColour]}soft locking{/color} themselves?"
@@ -1753,15 +1732,15 @@ label clipThroughDoors:
 label closeDoorsBehind:
     $ room.yes_init = "end", Params.CLOSE_BEHIND, Params.NONE
     $ room.no_init = "end", Params.NONE, Params.CLOSE_BEHIND
-    call setup from _call_setup_16
+    call setup
     "Fine."
-    "What about some automation"
-    question "Should the doors {color=[room.yes.textColour]}close behind you{/color} or {color=[room.no.textColour]}stay open{/color} when you walk past?\n\n{size=*0.1}I don't care if you say yes, I'm not actualy adding this... the amount of bugs this would cause...{/size}"
+    ""
+    question "{color=[room.yes.textColour]}{/color}{color=[room.no.textColour]}{/color}?\n\n{w}{size=*0.1}I don't care if you say yes, I'm not actualy adding this... the amount of bugs this would cause...{/size}"
 
 label end:
     $ room.yes_init = "end", Params.NONE, Params.NONE
     $ room.no_init = "end", Params.NONE, Params.NONE
-    call setup from _call_setup_17
+    call setup
     "Well done"
     "You've made some pretty good choices"
     "Not nearly enough to actually implement but enough for now"
